@@ -1,0 +1,65 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: esic_postgres
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-esic_user}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-esic_password}
+      POSTGRES_DB: ${DATABASE_NAME:-esic_db}
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-esic_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - esic_network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: esic_backend
+    environment:
+      DATABASE_URL: postgresql://${DATABASE_USER:-esic_user}:${DATABASE_PASSWORD:-esic_password}@postgres:5432/${DATABASE_NAME:-esic_db}
+      EXTERNAL_SERVICE_URL: http://external-service:8001
+      APP_ENV: ${APP_ENV:-development}
+      APP_DEBUG: ${APP_DEBUG:-True}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+    ports:
+      - "${SERVER_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+    networks:
+      - esic_network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  external-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.external
+    container_name: esic_external_service
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+    ports:
+      - "8001:8001"
+    networks:
+      - esic_network
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+
+volumes:
+  postgres_data:
+
+networks:
+  esic_network:
+    driver: bridge
