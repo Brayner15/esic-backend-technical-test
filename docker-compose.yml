@@ -38,6 +38,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     volumes:
       - ./app:/app/app
       - ./logs:/app/logs
@@ -64,7 +70,8 @@ services:
       dockerfile: Dockerfile.consumer
     container_name: esic_consumer
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       BACKEND_URL: http://backend:8000
     volumes:
