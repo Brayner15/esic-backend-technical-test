@@ -1,12 +1,14 @@
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.database import engine, Base
+from app.database import engine, Base, get_db
 from app.api import routes
-from app.schemas import HealthCheckResponse
+from app.schemas import HealthCheckResponse, ReadinessCheckResponse
 
 settings = get_settings()
 
@@ -42,10 +44,28 @@ app.include_router(routes.router)
 
 @app.get("/health", response_model=HealthCheckResponse)
 def health_check():
+    """Verificar disponibilidad de la API."""
     return HealthCheckResponse(
         status="healthy",
         version="0.1.0",
         environment=settings.app_env,
+    )
+
+
+@app.get("/health/ready", response_model=ReadinessCheckResponse)
+def readiness_check(db: Session = Depends(get_db)):
+    """Verificar que la API esté lista: disponibilidad y conexión con PostgreSQL."""
+    try:
+        db.execute(text("SELECT 1"))
+        database_status = "connected"
+    except Exception as e:
+        logger.error(f"Database connection check failed: {str(e)}")
+        database_status = "disconnected"
+
+    return ReadinessCheckResponse(
+        status="ready" if database_status == "connected" else "not_ready",
+        database=database_status,
+        version="0.1.0",
     )
 
 

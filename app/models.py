@@ -4,12 +4,24 @@ from app.database import Base
 import enum
 
 
+class RequestTypeEnum(str, enum.Enum):
+    PLATFORM_ACCESS = "acceso_plataforma"
+    TECHNICAL_SUPPORT = "soporte_tecnico"
+    ACADEMIC = "academica"
+    ADMINISTRATIVE = "administrativa"
+
+
 class RequestStatusEnum(str, enum.Enum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+    RECEIVED = "recibida"
+    PROCESSING = "en_proceso"
+    COMPLETED = "completada"
+    REJECTED = "rechazada"
+
+
+class PriorityEnum(str, enum.Enum):
+    LOW = "baja"
+    MEDIUM = "media"
+    HIGH = "alta"
 
 
 class InstitutionalRequest(Base):
@@ -17,15 +29,16 @@ class InstitutionalRequest(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     request_number = Column(String(50), unique=True, nullable=False, index=True)
+    external_id = Column(String(100), unique=True, nullable=False, index=True)
     requester_name = Column(String(255), nullable=False)
     requester_email = Column(String(255), nullable=False, index=True)
     institution_name = Column(String(255), nullable=False)
-    request_type = Column(String(100), nullable=False)
+    request_type = Column(Enum(RequestTypeEnum), nullable=False, index=True)
     description = Column(Text, nullable=False)
-    status = Column(Enum(RequestStatusEnum), default=RequestStatusEnum.PENDING, nullable=False)
-    external_reference_id = Column(String(100), nullable=True, unique=True, index=True)
+    priority = Column(Enum(PriorityEnum), nullable=False, index=True, default=PriorityEnum.MEDIUM)
+    status = Column(Enum(RequestStatusEnum), default=RequestStatusEnum.RECEIVED, nullable=False, index=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     class Config:
