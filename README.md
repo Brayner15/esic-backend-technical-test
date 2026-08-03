@@ -106,7 +106,7 @@ Este proyecto implementa un servicio backend profesional que permite:
 │   └── consumer.log              # Logs del consumidor
 ├── .env.example                  # Variables de entorno template
 ├── .gitignore
-├── docker-compose.yml            # Orquestación de servicios
+├── compose.yaml            # Orquestación de servicios
 ├── Dockerfile                    # Imagen backend
 ├── Dockerfile.consumer           # Imagen consumer
 ├── Dockerfile.external           # Imagen servicio externo
