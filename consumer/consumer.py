@@ -417,7 +417,7 @@ def main():
 
     requests_to_create = [
         {
-            "external_id": "EXT-001",
+            "external_id": f"EXT-{consumer.correlation_id[:8]}-001",
             "requester_name": "Juan Pérez",
             "requester_email": "juan@example.com",
             "institution_name": "Universidad Nacional",
@@ -426,7 +426,7 @@ def main():
             "priority": "alta",
         },
         {
-            "external_id": "EXT-002",
+            "external_id": f"EXT-{consumer.correlation_id[:8]}-002",
             "requester_name": "María García",
             "requester_email": "maria@example.com",
             "institution_name": "Instituto Técnico",
@@ -435,7 +435,7 @@ def main():
             "priority": "alta",
         },
         {
-            "external_id": "EXT-003",
+            "external_id": f"EXT-{consumer.correlation_id[:8]}-003",
             "requester_name": "Carlos López",
             "requester_email": "carlos@example.com",
             "institution_name": "Colegio Técnico",
@@ -444,7 +444,7 @@ def main():
             "priority": "media",
         },
         {
-            "external_id": "EXT-004",
+            "external_id": f"EXT-{consumer.correlation_id[:8]}-004",
             "requester_name": "Ana Martínez",
             "requester_email": "ana@example.com",
             "institution_name": "Universidad Central",
@@ -453,7 +453,7 @@ def main():
             "priority": "baja",
         },
         {
-            "external_id": "EXT-005",
+            "external_id": f"EXT-{consumer.correlation_id[:8]}-005",
             "requester_name": "Roberto Silva",
             "requester_email": "roberto@example.com",
             "institution_name": "Instituto Profesional",
