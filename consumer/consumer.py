@@ -1,13 +1,29 @@
 import httpx
 import logging
+import json
+import uuid
+import os
 from typing import Optional
 from datetime import datetime
+from pythonjsonlogger import jsonlogger
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+os.makedirs("logs", exist_ok=True)
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+file_handler = logging.FileHandler("logs/consumer.log")
+file_handler.setLevel(logging.INFO)
+file_formatter = jsonlogger.JsonFormatter(
+    "%(timestamp)s %(level)s %(logger)s %(message)s %(correlation_id)s"
+)
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(file_formatter)
+logger.addHandler(console_handler)
 
 
 class RequestConsumer:
@@ -26,6 +42,7 @@ class RequestConsumer:
         self.retry_delay = retry_delay
         self.client = httpx.Client(timeout=timeout)
         self.results = []
+        self.correlation_id = str(uuid.uuid4())
 
     def is_retryable_error(self, status_code: int) -> bool:
         """Determine if an error is retryable."""
@@ -65,13 +82,21 @@ class RequestConsumer:
                     f"{self.base_url}/solicitudes/",
                     json=payload,
                     timeout=self.timeout,
+                    headers={"X-Correlation-ID": self.correlation_id},
                 )
 
                 if response.status_code == 201:
                     result = response.json()
                     logger.info(
-                        f"✓ Successfully created request {external_id} | "
-                        f"ID: {result['id']} | Attempt: {attempt}"
+                        "create_request_success",
+                        extra={
+                            "correlation_id": self.correlation_id,
+                            "external_id": external_id,
+                            "request_id": result["id"],
+                            "request_number": result["request_number"],
+                            "attempt": attempt,
+                            "status_code": 201,
+                        },
                     )
                     self.results.append({
                         "external_id": external_id,
@@ -84,8 +109,13 @@ class RequestConsumer:
 
                 elif response.status_code == 409:
                     logger.warning(
-                        f"✗ Duplicate request {external_id} (409 Conflict) | "
-                        f"Not retrying"
+                        "create_request_conflict",
+                        extra={
+                            "correlation_id": self.correlation_id,
+                            "external_id": external_id,
+                            "status_code": 409,
+                            "error_detail": "Duplicate external_id",
+                        },
                     )
                     self.results.append({
                         "external_id": external_id,
@@ -98,8 +128,14 @@ class RequestConsumer:
 
                 elif response.status_code >= 400 and response.status_code < 500:
                     logger.error(
-                        f"✗ Client error creating request {external_id} | "
-                        f"Status: {response.status_code} | Not retrying"
+                        "create_request_client_error",
+                        extra={
+                            "correlation_id": self.correlation_id,
+                            "external_id": external_id,
+                            "status_code": response.status_code,
+                            "attempt": attempt,
+                            "retry": False,
+                        },
                     )
                     self.results.append({
                         "external_id": external_id,
@@ -112,8 +148,14 @@ class RequestConsumer:
 
                 elif self.is_retryable_error(response.status_code):
                     logger.warning(
-                        f"⟳ Retryable error creating request {external_id} | "
-                        f"Status: {response.status_code} | Attempt: {attempt}/{self.max_retries}"
+                        "create_request_retryable_error",
+                        extra={
+                            "correlation_id": self.correlation_id,
+                            "external_id": external_id,
+                            "status_code": response.status_code,
+                            "retry_attempt": attempt,
+                            "max_retries": self.max_retries,
+                        },
                     )
                     if attempt < self.max_retries:
                         import time
@@ -121,25 +163,39 @@ class RequestConsumer:
                     attempt += 1
                 else:
                     logger.error(
-                        f"✗ Unexpected error creating request {external_id} | "
-                        f"Status: {response.status_code}"
+                        "create_request_unexpected_error",
+                        extra={
+                            "correlation_id": self.correlation_id,
+                            "external_id": external_id,
+                            "status_code": response.status_code,
+                        },
                     )
                     return None
 
-            except httpx.TimeoutException as e:
+            except httpx.TimeoutException:
                 logger.warning(
-                    f"⟳ Timeout creating request {external_id} | "
-                    f"Attempt: {attempt}/{self.max_retries}"
+                    "create_request_timeout",
+                    extra={
+                        "correlation_id": self.correlation_id,
+                        "external_id": external_id,
+                        "retry_attempt": attempt,
+                        "max_retries": self.max_retries,
+                    },
                 )
                 if attempt < self.max_retries:
                     import time
                     time.sleep(self.retry_delay)
                 attempt += 1
 
-            except httpx.ConnectError as e:
+            except httpx.ConnectError:
                 logger.warning(
-                    f"⟳ Connection error creating request {external_id} | "
-                    f"Attempt: {attempt}/{self.max_retries}"
+                    "create_request_connection_error",
+                    extra={
+                        "correlation_id": self.correlation_id,
+                        "external_id": external_id,
+                        "retry_attempt": attempt,
+                        "max_retries": self.max_retries,
+                    },
                 )
                 if attempt < self.max_retries:
                     import time
@@ -148,7 +204,12 @@ class RequestConsumer:
 
             except Exception as e:
                 logger.error(
-                    f"✗ Unexpected error creating request {external_id}: {str(e)}"
+                    "create_request_unexpected_exception",
+                    extra={
+                        "correlation_id": self.correlation_id,
+                        "external_id": external_id,
+                        "error_detail": str(e),
+                    },
                 )
                 self.results.append({
                     "external_id": external_id,
@@ -160,7 +221,12 @@ class RequestConsumer:
                 return None
 
         logger.error(
-            f"✗ Failed to create request {external_id} after {self.max_retries} attempts"
+            "create_request_max_retries_exceeded",
+            extra={
+                "correlation_id": self.correlation_id,
+                "external_id": external_id,
+                "max_retries": self.max_retries,
+            },
         )
         self.results.append({
             "external_id": external_id,
@@ -177,25 +243,43 @@ class RequestConsumer:
             response = self.client.get(
                 f"{self.base_url}/solicitudes/{request_id}",
                 timeout=self.timeout,
+                headers={"X-Correlation-ID": self.correlation_id},
             )
 
             if response.status_code == 200:
                 result = response.json()
                 logger.info(
-                    f"✓ Retrieved request {external_id} | "
-                    f"Status: {result['status']}"
+                    "get_request_success",
+                    extra={
+                        "correlation_id": self.correlation_id,
+                        "external_id": external_id,
+                        "request_id": request_id,
+                        "status": result["status"],
+                        "status_code": 200,
+                    },
                 )
                 return result
             else:
                 logger.error(
-                    f"✗ Failed to retrieve request {external_id} | "
-                    f"Status: {response.status_code}"
+                    "get_request_error",
+                    extra={
+                        "correlation_id": self.correlation_id,
+                        "external_id": external_id,
+                        "request_id": request_id,
+                        "status_code": response.status_code,
+                    },
                 )
                 return None
 
         except Exception as e:
             logger.error(
-                f"✗ Error retrieving request {external_id}: {str(e)}"
+                "get_request_exception",
+                extra={
+                    "correlation_id": self.correlation_id,
+                    "external_id": external_id,
+                    "request_id": request_id,
+                    "error_detail": str(e),
+                },
             )
             return None
 
@@ -207,13 +291,34 @@ class RequestConsumer:
                 timeout=5,
             )
             if response.status_code == 200:
-                logger.info("✓ Backend is healthy")
+                logger.info(
+                    "health_check_success",
+                    extra={
+                        "correlation_id": self.correlation_id,
+                        "service": "backend",
+                        "status_code": 200,
+                    },
+                )
                 return True
             else:
-                logger.error(f"✗ Backend health check failed: {response.status_code}")
+                logger.error(
+                    "health_check_failed",
+                    extra={
+                        "correlation_id": self.correlation_id,
+                        "service": "backend",
+                        "status_code": response.status_code,
+                    },
+                )
                 return False
         except Exception as e:
-            logger.error(f"✗ Backend connection error: {str(e)}")
+            logger.error(
+                "health_check_exception",
+                extra={
+                    "correlation_id": self.correlation_id,
+                    "service": "backend",
+                    "error_detail": str(e),
+                },
+            )
             return False
 
     def check_readiness(self) -> bool:
@@ -226,16 +331,34 @@ class RequestConsumer:
             if response.status_code == 200:
                 data = response.json()
                 logger.info(
-                    f"✓ Backend is ready | Database: {data['database']}"
+                    "readiness_check_success",
+                    extra={
+                        "correlation_id": self.correlation_id,
+                        "service": "backend",
+                        "database": data["database"],
+                        "status_code": 200,
+                    },
                 )
                 return True
             else:
                 logger.error(
-                    f"✗ Backend readiness check failed: {response.status_code}"
+                    "readiness_check_failed",
+                    extra={
+                        "correlation_id": self.correlation_id,
+                        "service": "backend",
+                        "status_code": response.status_code,
+                    },
                 )
                 return False
         except Exception as e:
-            logger.error(f"✗ Backend readiness error: {str(e)}")
+            logger.error(
+                "readiness_check_exception",
+                extra={
+                    "correlation_id": self.correlation_id,
+                    "service": "backend",
+                    "error_detail": str(e),
+                },
+            )
             return False
 
     def print_summary(self):
@@ -244,36 +367,53 @@ class RequestConsumer:
         failed = sum(1 for r in self.results if r["status"] in ["failed", "error"])
         conflicts = sum(1 for r in self.results if r["status"] == "conflict")
 
-        logger.info("\n" + "=" * 60)
-        logger.info("EXECUTION SUMMARY")
-        logger.info("=" * 60)
-        logger.info(f"Total attempts: {len(self.results)}")
-        logger.info(f"Successful: {successful}")
-        logger.info(f"Failed: {failed}")
-        logger.info(f"Conflicts (duplicates): {conflicts}")
-        logger.info("=" * 60 + "\n")
+        logger.info(
+            "execution_summary",
+            extra={
+                "correlation_id": self.correlation_id,
+                "total_attempts": len(self.results),
+                "successful": successful,
+                "failed": failed,
+                "conflicts": conflicts,
+            },
+        )
 
 
 def main():
     """Main execution function."""
     consumer = RequestConsumer(
-        base_url="http://localhost:8000",
+        base_url="http://backend:8000",
         timeout=30,
         max_retries=3,
         retry_delay=2,
     )
 
-    logger.info("Starting institutional requests consumer service...\n")
+    logger.info(
+        "consumer_started",
+        extra={
+            "correlation_id": consumer.correlation_id,
+            "backend_url": consumer.base_url,
+        },
+    )
 
     if not consumer.check_health():
-        logger.error("Backend is not available. Exiting.")
+        logger.error(
+            "consumer_backend_unavailable",
+            extra={"correlation_id": consumer.correlation_id},
+        )
         return
 
     if not consumer.check_readiness():
-        logger.error("Backend is not ready. Exiting.")
+        logger.error(
+            "consumer_backend_not_ready",
+            extra={"correlation_id": consumer.correlation_id},
+        )
         return
 
-    logger.info("\nCreating institutional requests...\n")
+    logger.info(
+        "creating_requests",
+        extra={"correlation_id": consumer.correlation_id},
+    )
 
     requests_to_create = [
         {
@@ -329,7 +469,13 @@ def main():
         if result:
             created_requests.append(result)
 
-    logger.info("\nConsulting request statuses...\n")
+    logger.info(
+        "consulting_status",
+        extra={
+            "correlation_id": consumer.correlation_id,
+            "requests_created": len(created_requests),
+        },
+    )
 
     for request in created_requests:
         consumer.get_request(request["id"], request["external_id"])

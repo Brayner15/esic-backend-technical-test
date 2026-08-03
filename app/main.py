@@ -1,4 +1,5 @@
 import logging
+import os
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -9,19 +10,24 @@ from app.config import get_settings
 from app.database import engine, Base, get_db
 from app.api import routes
 from app.schemas import HealthCheckResponse, ReadinessCheckResponse
+from app.logging_config import setup_logging
+from app.middleware import LoggingMiddleware
 
 settings = get_settings()
 
-logging.basicConfig(level=settings.app_log_level)
-logger = logging.getLogger(__name__)
+os.makedirs("logs", exist_ok=True)
+logger = setup_logging(
+    __name__,
+    log_file="logs/application.log"
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Application startup")
+    logger.info("application_startup", extra={"environment": settings.app_env})
     Base.metadata.create_all(bind=engine)
     yield
-    logger.info("Application shutdown")
+    logger.info("application_shutdown")
 
 
 app = FastAPI(
@@ -30,6 +36,8 @@ app = FastAPI(
     description="Backend service for institutional requests management",
     lifespan=lifespan,
 )
+
+app.add_middleware(LoggingMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,7 +67,10 @@ def readiness_check(db: Session = Depends(get_db)):
         db.execute(text("SELECT 1"))
         database_status = "connected"
     except Exception as e:
-        logger.error(f"Database connection check failed: {str(e)}")
+        logger.error(
+            "database_connection_failed",
+            extra={"error_detail": str(e)}
+        )
         database_status = "disconnected"
 
     return ReadinessCheckResponse(
