@@ -8,7 +8,10 @@ from app.schemas import (
     InstitutionalRequestUpdate,
     InstitutionalRequestStatusUpdate,
 )
-from app.services import InstitutionalRequestService
+from app.services import (
+    InstitutionalRequestService,
+    DuplicateExternalIdError,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/solicitudes", tags=["solicitudes"])
@@ -40,7 +43,8 @@ def create_request(request: InstitutionalRequestCreate, db: Session = Depends(ge
             },
         )
         return created_request
-    except ValueError as e:
+
+    except DuplicateExternalIdError as e:
         logger.warning(
             "create_request_duplicate",
             extra={
@@ -51,6 +55,18 @@ def create_request(request: InstitutionalRequestCreate, db: Session = Depends(ge
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(e)
+        )
+    except Exception as e:
+        logger.error(
+            "create_request_unexpected_error",
+            extra={
+                "external_id": request.external_id,
+                "error_detail": str(e),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al crear la solicitud. Por favor intente más tarde."
         )
 
 
@@ -97,13 +113,18 @@ def list_requests(
 def get_request(request_id: int, db: Session = Depends(get_db)):
     """Consultar una solicitud específica por su ID."""
     logger.info("get_request_attempt", extra={"request_id": request_id})
+
     db_request = InstitutionalRequestService.get_request(db, request_id)
     if not db_request:
-        logger.warning("get_request_not_found", extra={"request_id": request_id})
+        logger.warning(
+            "get_request_not_found",
+            extra={"request_id": request_id}
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Solicitud no encontrada"
+            detail=f"Solicitud con ID {request_id} no encontrada"
         )
+
     logger.info(
         "get_request_success",
         extra={
@@ -122,13 +143,18 @@ def update_request(
 ):
     """Actualizar una solicitud (nombre, descripción o prioridad)."""
     logger.info("update_request_attempt", extra={"request_id": request_id})
+
     db_request = InstitutionalRequestService.update_request(db, request_id, request)
     if not db_request:
-        logger.warning("update_request_not_found", extra={"request_id": request_id})
+        logger.warning(
+            "update_request_not_found",
+            extra={"request_id": request_id}
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Solicitud no encontrada"
+            detail=f"Solicitud con ID {request_id} no encontrada"
         )
+
     logger.info(
         "update_request_success",
         extra={
@@ -153,13 +179,18 @@ def update_request_status(
             "new_status": status_update.status,
         },
     )
+
     db_request = InstitutionalRequestService.update_request_status(db, request_id, status_update)
     if not db_request:
-        logger.warning("update_status_not_found", extra={"request_id": request_id})
+        logger.warning(
+            "update_status_not_found",
+            extra={"request_id": request_id}
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Solicitud no encontrada"
+            detail=f"Solicitud con ID {request_id} no encontrada"
         )
+
     logger.info(
         "update_status_success",
         extra={
@@ -174,11 +205,16 @@ def update_request_status(
 def delete_request(request_id: int, db: Session = Depends(get_db)):
     """Eliminar una solicitud."""
     logger.info("delete_request_attempt", extra={"request_id": request_id})
+
     success = InstitutionalRequestService.delete_request(db, request_id)
     if not success:
-        logger.warning("delete_request_not_found", extra={"request_id": request_id})
+        logger.warning(
+            "delete_request_not_found",
+            extra={"request_id": request_id}
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Solicitud no encontrada"
+            detail=f"Solicitud con ID {request_id} no encontrada"
         )
+
     logger.info("delete_request_success", extra={"request_id": request_id})
