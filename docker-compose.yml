@@ -40,6 +40,7 @@ services:
         condition: service_healthy
     volumes:
       - ./app:/app/app
+      - ./logs:/app/logs
     networks:
       - esic_network
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
@@ -57,9 +58,25 @@ services:
       - esic_network
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    container_name: esic_consumer
+    depends_on:
+      - backend
+    environment:
+      BACKEND_URL: http://backend:8000
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - esic_network
+    command: python consumer.py
+
 volumes:
   postgres_data:
 
 networks:
   esic_network:
     driver: bridge
+
