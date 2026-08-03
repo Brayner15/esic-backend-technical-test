@@ -296,7 +296,7 @@ wc -l logs/application.log
 - [x] Manejo de concurrencia
 - [x] Logging en JSON
 - [x] Correlation IDs funcionan
-- [x] Docs Swagger/ReDoc accesibles
+- [x] Docs Swagger
 
 ## Troubleshooting
 

@@ -338,11 +338,6 @@ Acceder a la documentación automática de la API:
 http://localhost:8000/docs
 ```
 
-### ReDoc
-```
-http://localhost:8000/redoc
-```
-
 ## Ejecutar Consumer Service
 
 El servicio consumidor se ejecuta automáticamente al hacer `docker compose up`, pero si deseas ejecutarlo manualmente:

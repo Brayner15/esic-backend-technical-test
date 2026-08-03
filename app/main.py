@@ -35,6 +35,7 @@ app = FastAPI(
     version="0.1.0",
     description="Backend service for institutional requests management",
     lifespan=lifespan,
+    redoc_url=None,
 )
 
 app.add_middleware(LoggingMiddleware)

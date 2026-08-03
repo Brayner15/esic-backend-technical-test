@@ -14,7 +14,7 @@ Este proyecto implementa un servicio backend profesional que permite:
 - ✅ Crear, leer, actualizar y eliminar solicitudes institucionales
 - ✅ Gestionar el ciclo de vida de solicitudes (recibida, en proceso, completada, rechazada)
 - ✅ Integración con sistemas externos simulados
-- ✅ API RESTful con documentación automática (Swagger/ReDoc)
+- ✅ API RESTful con documentación automática (Swagger)
 - ✅ Base de datos relacional con PostgreSQL
 - ✅ Logging estructurado en JSON con trazabilidad
 - ✅ Manejo robusto de concurrencia y duplicados
@@ -332,7 +332,6 @@ Validación previa + IntegrityError handling = garantía de no-duplicados.
 Accedible una vez que `docker compose up`:
 
 - **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
 - **OpenAPI Schema**: http://localhost:8000/openapi.json
 
 ## 🤝 Contribuciones
