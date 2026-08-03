@@ -5,16 +5,16 @@ services:
     image: postgres:15-alpine
     container_name: esic_postgres
     environment:
-      POSTGRES_USER: ${DATABASE_USER:-esic_user}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-esic_password}
-      POSTGRES_DB: ${DATABASE_NAME:-esic_db}
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
     ports:
-      - "${DATABASE_PORT:-5432}:5432"
+      - "${DATABASE_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init_db.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-esic_user}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -27,12 +27,12 @@ services:
       dockerfile: Dockerfile
     container_name: esic_backend
     environment:
-      DATABASE_URL: postgresql://${DATABASE_USER:-esic_user}:${DATABASE_PASSWORD:-esic_password}@postgres:5432/${DATABASE_NAME:-esic_db}
-      EXTERNAL_SERVICE_URL: http://external-service:8001
-      APP_ENV: ${APP_ENV:-development}
-      APP_DEBUG: ${APP_DEBUG:-True}
-      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
-      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+      DATABASE_URL: ${DATABASE_URL}
+      EXTERNAL_SERVICE_URL: ${EXTERNAL_SERVICE_URL}
+      APP_ENV: ${APP_ENV}
+      APP_DEBUG: ${APP_DEBUG}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL}
+      SECRET_KEY: ${SECRET_KEY}
     ports:
       - "${SERVER_PORT:-8000}:8000"
     depends_on:
@@ -51,7 +51,7 @@ services:
       dockerfile: Dockerfile.external
     container_name: esic_external_service
     environment:
-      APP_ENV: ${APP_ENV:-development}
+      APP_ENV: ${APP_ENV}
     ports:
       - "8001:8001"
     networks:
