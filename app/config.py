@@ -13,16 +13,18 @@ class Settings(BaseSettings):
     server_port: int = int(os.getenv("SERVER_PORT", 8000))
     server_reload: bool = os.getenv("SERVER_RELOAD", "True").lower() == "true"
 
-    database_url: str = os.getenv(
-        "DATABASE_URL", "postgresql://user:password@localhost:5432/dbname"
-    )
-    database_pool_size: int = int(os.getenv("DATABASE_POOL_SIZE", 20))
-    database_pool_recycle: int = int(os.getenv("DATABASE_POOL_RECYCLE", 3600))
+    # Database URL is REQUIRED - no default allowed
+    database_url: str = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is required")
 
-    external_service_url: str = os.getenv("EXTERNAL_SERVICE_URL", "http://localhost:8001")
-    external_service_timeout: int = int(os.getenv("EXTERNAL_SERVICE_TIMEOUT", 30))
+    database_pool_size: int = int(os.getenv("DATABASE_POOL_SIZE", "20"))
+    database_pool_recycle: int = int(os.getenv("DATABASE_POOL_RECYCLE", "3600"))
 
-    secret_key: str = os.getenv("SECRET_KEY", "your-secret-key")
+    external_service_url: str = os.getenv("EXTERNAL_SERVICE_URL", "http://external-service:8001")
+    external_service_timeout: int = int(os.getenv("EXTERNAL_SERVICE_TIMEOUT", "30"))
+
+    secret_key: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
     algorithm: str = os.getenv("ALGORITHM", "HS256")
 
     class Config:
