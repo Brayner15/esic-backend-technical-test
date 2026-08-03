@@ -134,10 +134,27 @@ Este proyecto implementa un servicio backend profesional que permite:
    cd esic-backend-technical-test
    ```
 
-2. **Crear archivo .env**
+2. **Crear archivo .env (requerido)**
+   
+   Copia el archivo `.env.example` a `.env`:
    ```bash
    cp .env.example .env
    ```
+   
+   El archivo `.env` contiene todas las credenciales de la base de datos:
+   ```env
+   # Database Configuration (PostgreSQL)
+   DATABASE_USER=esic_user
+   DATABASE_PASSWORD=esic_password
+   DATABASE_NAME=esic_db
+   DATABASE_PORT=5432
+   DATABASE_URL=postgresql://esic_user:esic_password@postgres:5432/esic_db
+   
+   # Puedes cambiar estos valores según necesites
+   # Importante: nunca subas .env a Git
+   ```
+   
+   **Nota:** El archivo `.env` está en `.gitignore` por seguridad. Cada entorno (dev, staging, prod) tendrá sus propias credenciales.
 
 3. **Levantar los servicios**
    ```bash
