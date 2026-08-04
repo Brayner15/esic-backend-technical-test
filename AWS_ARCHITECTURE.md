@@ -1,569 +1,414 @@
 # Propuesta de Arquitectura en AWS
 
-## Resumen Ejecutivo
+## Resumen
 
-Esta propuesta describe el despliegue de un servicio backend de gestión de solicitudes institucionales en AWS, manteniendo alta disponibilidad, escalabilidad y seguridad. La solución utiliza servicios gestionados de AWS para minimizar overhead operacional y maximizar confiabilidad.
-
-**Componentes Clave:**
-- Application Load Balancer (ALB) para enrutamiento inteligente
-- Amazon ECS (Fargate) para containers sin servidor
-- Amazon RDS PostgreSQL para base de datos relacional
-- AWS Secrets Manager para gestión de credenciales
-- Amazon CloudWatch para logging y monitoreo
-- AWS WAF para protección contra tráfico malicioso
-
----
-
-## 1. Arquitectura de Red
-
-### VPC y Subnets
+Una arquitectura **simple y enfocada** para desplegar el servicio de solicitudes institucionales en AWS usando servicios gestionados.
 
 ```
-AWS Account (us-east-1)
-│
-├─ VPC (10.0.0.0/16)
-│  │
-│  ├─ Public Subnets (ALB, NAT Gateway)
-│  │  ├─ AZ-1a: 10.0.1.0/24
-│  │  └─ AZ-1b: 10.0.2.0/24
-│  │
-│  ├─ Private Subnets (ECS Tasks, RDS)
-│  │  ├─ AZ-1a: 10.0.10.0/24
-│  │  └─ AZ-1b: 10.0.11.0/24
-│  │
-│  └─ Isolated Subnets (RDS only, no internet access)
-│     ├─ AZ-1a: 10.0.20.0/24
-│     └─ AZ-1b: 10.0.21.0/24
-│
-├─ Internet Gateway (para tráfico público)
-├─ NAT Gateway (acceso a internet desde privadas)
-└─ VPC Endpoints (acceso a servicios AWS sin internet)
-```
-
-**Justificación:**
-- **Alta Disponibilidad:** Multi-AZ en 2+ zonas de disponibilidad
-- **Seguridad en Capas:** Separación entre públicas y privadas
-- **RDS Aislada:** Base de datos sin acceso directo a internet
-- **Escalabilidad:** Subnets con espacio para crecimiento
-
-### Security Groups
-
-```
-ALB Security Group (sg-alb)
-├─ Ingress:
-│  ├─ Port 80 (HTTP) from 0.0.0.0/0
-│  ├─ Port 443 (HTTPS) from 0.0.0.0/0
-│  └─ Port 8001 (External Service) from 0.0.0.0/0
-└─ Egress: All traffic to Backend SG
-
-Backend Security Group (sg-backend)
-├─ Ingress:
-│  ├─ Port 8000 from ALB SG
-│  └─ Port 8001 from ALB SG
-├─ Egress:
-│  ├─ Port 5432 (PostgreSQL) to RDS SG
-│  └─ Port 443 to 0.0.0.0/0 (HTTPS para APIs externas)
-└─ Self-referencing para inter-task communication
-
-RDS Security Group (sg-rds)
-├─ Ingress: Port 5432 from Backend SG only
-└─ Egress: None (RDS es destino)
+Internet → ALB → ECS Fargate → RDS PostgreSQL
+                 ↓
+            CloudWatch Logs
 ```
 
 ---
 
-## 2. Componentes de Compute
+## Componentes Principales
 
-### Amazon ECS (Elastic Container Service) - Fargate
+### 1. Application Load Balancer (ALB)
+**¿Qué es?** Distribuidor de tráfico que enruta las peticiones HTTP/HTTPS.
 
-**Backend Service:**
-- **Cluster:** `esic-backend-prod`
-- **Task Definition:** `esic-backend-task`
-  - CPU: 512 (0.5 vCPU)
-  - Memory: 1024 MB (1 GB)
-  - Containers: 2 (backend + sidecar logging)
-  - Image: `<account-id>.dkr.ecr.us-east-1.amazonaws.com/esic-backend:latest`
+**Configuración:**
+- Puerto 443 (HTTPS) → Backend puerto 8000
+- Certificado SSL/TLS desde AWS Certificate Manager (gratuito)
+- Health checks cada 30 segundos a `/health/ready`
 
-**Consumer Service:**
-- **Type:** Scheduled Task (ECS Scheduled Rules)
-- **Schedule:** Cron `0 */6 * * ?` (cada 6 horas)
-- **Task Definition:** `esic-consumer-task`
+**Costo:** ~$16/mes (fixed) + $0.006/LCU
+
+---
+
+### 2. Amazon ECS Fargate
+**¿Qué es?** Servicio para ejecutar contenedores sin gestionar servidores.
+
+**Configuración:**
+```
+- Cluster: esic-backend-prod
+- Tarea: 1 contenedor backend
   - CPU: 256 (0.25 vCPU)
   - Memory: 512 MB
-  - Image: `<account-id>.dkr.ecr.us-east-1.amazonaws.com/esic-consumer:latest`
-
-**Service Configuration:**
-```
-Service Name: esic-backend-service
-Desired Count: 2 (mínimo para HA)
-Deployment Configuration:
-  - Minimum: 100% (al menos 1 task corriendo)
-  - Maximum: 200% (hasta 4 tasks durante updates)
-Auto Scaling:
-  - Min: 2 tasks
-  - Max: 10 tasks
-  - Target CPU: 70%
-  - Target Memory: 80%
+  - Imagen: tu-cuenta.dkr.ecr.us-east-1.amazonaws.com/esic-backend:latest
+  
+- Servicio: 2 tareas (mínimo para HA)
+- Auto-scaling: 2-4 tareas según CPU (70%)
+- Región: us-east-1 (multi-AZ automático)
 ```
 
-**Ventajas de Fargate:**
-- ✅ Sin gestión de instancias EC2
-- ✅ Escalado automático
-- ✅ Pricing por uso real
-- ✅ Integración nativa con CloudWatch
+**Ventajas:**
+- Sin gestión de servidores EC2
+- Escalado automático
+- Alta disponibilidad automática
 
-### External Container Registry
+**Costo:** ~$0.042/hora/tarea = ~$30/mes (2 tareas)
 
-**Amazon ECR (Elastic Container Registry):**
+---
+
+### 3. Amazon RDS PostgreSQL
+**¿Qué es?** Base de datos relacional gestionada.
+
+**Configuración:**
 ```
-Repositories:
-├─ esic-backend
-│  ├─ latest (última imagen)
-│  ├─ v0.1.0 (releases)
-│  └─ <commit-sha> (todas las builds)
-├─ esic-consumer
-└─ esic-external-service
+- Engine: PostgreSQL 15
+- Instance: db.t3.micro (bueno para inicio)
+- Storage: 20 GB SSD, auto-scaling hasta 100 GB
+- Multi-AZ: Habilitado (failover automático < 2 min)
+- Backups: Automáticos (7 días de retención)
+- Acceso: Solo desde Security Group del backend
+```
 
-Image Scanning:
-├─ Enabled: Scan on push
-├─ Auto-delete: Imágenes viejas > 30 días
-└─ Notifications: SNS para vulnerabilidades
+**Ventajas:**
+- Backups automáticos
+- Failover automático
+- Patches automáticos
+
+**Costo:** ~$60/mes (db.t3.small con Multi-AZ)
+
+---
+
+### 4. CloudWatch Logs
+**¿Qué es?** Servicio para centralizar y analizar logs.
+
+**Configuración:**
+```
+- Log Group: /ecs/esic-backend
+- Retención: 30 días
+- Flujo: ECS → CloudWatch automáticamente
+```
+
+**Queries útiles:**
+```
+# Ver errores
+fields @timestamp, @message | filter @message like /ERROR/
+
+# Latencia promedio
+stats avg(duration_ms) by request_path
+
+# Contar por status code
+stats count() by status_code
+```
+
+**Costo:** ~$5/mes (logs)
+
+---
+
+### 5. IAM Roles (Seguridad)
+**¿Qué es?** Control de permisos para cada servicio.
+
+**Configuración:**
+
+**ECS Task Execution Role:**
+- Permisos para descargar imagen desde ECR
+- Permisos para escribir logs en CloudWatch
+- Permisos para leer secretos (si usas Secrets Manager)
+
+**Application Role (en el contenedor):**
+- Solo acceso a RDS
+- Nada más
+
+**Principio:** Least privilege - cada servicio solo accede a lo que necesita.
+
+---
+
+## Diagrama de Servicios AWS
+
+```
+                           AWS Account (us-east-1)
+                           
+    ┌──────────────────────────────────────────────────────────┐
+    │                                                            │
+    │  ┌─────────────────────────────────────────────────────┐  │
+    │  │              AWS Certificate Manager               │  │
+    │  │         (SSL/TLS Certificate - Gratuito)           │  │
+    │  └─────────────────────────────────────────────────────┘  │
+    │                          │                                 │
+    │                          ▼                                 │
+    │  ┌─────────────────────────────────────────────────────┐  │
+    │  │   Application Load Balancer (ALB)                  │  │
+    │  │   • Puerto 443 (HTTPS)                             │  │
+    │  │   • Health Checks → /health/ready                  │  │
+    │  │   • Distribuye traffic entre tareas                │  │
+    │  │   • Multi-AZ (automático)                          │  │
+    │  └─────────────────────────────────────────────────────┘  │
+    │                          │                                 │
+    │                          ▼                                 │
+    │  ┌─────────────────────────────────────────────────────┐  │
+    │  │            ECS Cluster (esic-backend-prod)         │  │
+    │  │  ┌────────────────┐  ┌────────────────┐            │  │
+    │  │  │   ECS Task 1   │  │   ECS Task 2   │ ← +2-4    │  │
+    │  │  │ (Backend API)  │  │ (Backend API)  │   tareas  │  │
+    │  │  │ CPU: 256       │  │ CPU: 256       │   según   │  │
+    │  │  │ Mem: 512MB     │  │ Mem: 512MB     │   CPU     │  │
+    │  │  └────────────────┘  └────────────────┘            │  │
+    │  │       ↓                                              │  │
+    │  │  • Containerizado (Docker)                          │  │
+    │  │  • Multi-AZ automático                              │  │
+    │  │  • Auto-scaling en CPU (70%)                        │  │
+    │  └─────────────────────────────────────────────────────┘  │
+    │                          │                                 │
+    │                          ▼                                 │
+    │  ┌─────────────────────────────────────────────────────┐  │
+    │  │   RDS PostgreSQL (Multi-AZ)                         │  │
+    │  │   • db.t3.small (2 vCPU, 2GB RAM)                  │  │
+    │  │   • Storage: 20 GB (auto-scaling)                  │  │
+    │  │   • Primary AZ: us-east-1a                         │  │
+    │  │   • Standby AZ: us-east-1b (failover)              │  │
+    │  │   • Backups: Automáticos (7 días)                  │  │
+    │  └─────────────────────────────────────────────────────┘  │
+    │                          │                                 │
+    │                          ▼                                 │
+    │  ┌─────────────────────────────────────────────────────┐  │
+    │  │          CloudWatch Logs                            │  │
+    │  │  • Log Group: /ecs/esic-backend                    │  │
+    │  │  • Retención: 30 días                               │  │
+    │  │  • JSON format (correlation IDs)                    │  │
+    │  │  • Queries para debugging                           │  │
+    │  └─────────────────────────────────────────────────────┘  │
+    │                                                            │
+    │  ┌─────────────────────────────────────────────────────┐  │
+    │  │          IAM Roles & Policies                       │  │
+    │  │  • ECS Task Execution Role                          │  │
+    │  │  • Application Role (RDS access only)               │  │
+    │  │  • Least privilege principle                        │  │
+    │  └─────────────────────────────────────────────────────┘  │
+    │                                                            │
+    └──────────────────────────────────────────────────────────┘
+
+    Seguridad:
+    ─────────
+    • ALB: Acepta HTTPS desde Internet (0.0.0.0/0)
+    • Backend: Solo acepta traffic desde ALB
+    • RDS: Solo acepta conexiones desde Backend
+    • Encriptación en tránsito: ALB ↔ Backend
+    • Encriptación en reposo: RDS
 ```
 
 ---
 
-## 3. Base de Datos
+## Flujo de Petición
 
-### Amazon RDS PostgreSQL
-
-**Configuración:**
 ```
-Engine: PostgreSQL 15.2
-Instance Class: db.t3.small (2 vCPU, 2 GB RAM)
-Storage:
-  - Type: gp3 (SSD)
-  - Size: 100 GB inicial
-  - Auto-scaling: Hasta 500 GB
-  - Backups: Automáticos cada 6 horas
-  - Retention: 30 días
-
-Multi-AZ:
-  - Enabled: Standby en AZ diferente
-  - Failover: Automático < 2 minutos
-  - RTO: < 5 minutos
-  - RPO: < 1 minuto
-
-Performance Insights:
-  - Enabled: Monitoreo de rendimiento
-  - Retention: 7 días
-```
-
-**Acceso:**
-- Endpoint privado solo dentro de VPC
-- No tiene IP pública
-- Accesible solo desde Backend SG
-
-**Backups y Disaster Recovery:**
-```
-Snapshots automáticos: Diarios
-AWS Backup Integration: Retenidos 90 días
-Cross-Region Backup: Copia en us-west-2
-RTO: < 5 minutos (restore desde snapshot)
-RPO: < 1 hora (último backup)
+Cliente                AWS                         Backend Interno
+  │                     │                                  │
+  │─ HTTPS GET ────────→│                                  │
+  │                     │ (Certificate Manager)             │
+  │                     │ (ALB verifica SSL)                │
+  │                     │                                  │
+  │                     │─ HTTP POST ────────────────→    │
+  │                     │ /solicitudes/                │    │
+  │                     │ (Red privada)                │    │
+  │                     │                              │    │
+  │                     │                         (Query a RDS)
+  │                     │                         (CloudWatch log)
+  │                     │                              │    │
+  │                     │← JSON 201 ←─────────────────│    │
+  │                     │ (response)                   │    │
+  │                     │                              │    │
+  │← JSON 201 ──────────│                              │    │
+  │ (HTTPS response)    │                              │    │
+  │                     │                              │    │
 ```
 
 ---
 
-## 4. Load Balancing y Routing
-
-### Application Load Balancer (ALB)
-
-**Configuración:**
-```
-Name: esic-alb
-Scheme: Internet-facing
-IP Address Type: IPv4
-Subnets: Public subnets en AZ-1a y AZ-1b
-
-Listeners:
-├─ HTTP (80) → Redirect to HTTPS
-└─ HTTPS (443)
-   └─ Rules:
-      ├─ /solicitudes/* → Backend Target Group
-      ├─ /health* → Backend Target Group
-      └─ /* → 404 Not Found
-```
-
-**Target Groups:**
+## Diagrama Simple
 
 ```
-Target Group 1: esic-backend-tg
-├─ Protocol: HTTP
-├─ Port: 8000
-├─ Health Check:
-│  ├─ Path: /health/ready
-│  ├─ Protocol: HTTP
-│  ├─ Interval: 30s
-│  ├─ Timeout: 5s
-│  ├─ Healthy threshold: 2
-│  ├─ Unhealthy threshold: 2
-│  └─ Success codes: 200
-├─ Stickiness:
-│  ├─ Enabled: No (stateless)
-│  └─ Duration: N/A
-└─ Type: IP (para Fargate tasks)
-
-Target Group 2: esic-external-service-tg
-├─ Protocol: HTTP
-├─ Port: 8001
-└─ Similar health check
+┌─────────────┐
+│   Internet  │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────┐
+│  ALB (HTTPS:443)        │
+│  Health checks → /health/ready
+└──────┬──────────────────┘
+       │
+       ▼ (HTTP:8000)
+┌─────────────────────────┐
+│  ECS Fargate            │
+│  - 2-4 tareas           │
+│  - Auto-scaling en CPU  │
+│  - Multi-AZ automático  │
+└──────┬──────────────────┘
+       │
+       ▼ (Puerto 5432)
+┌─────────────────────────┐
+│  RDS PostgreSQL         │
+│  - Multi-AZ             │
+│  - Backups automáticos  │
+│  - Failover < 2 min     │
+└─────────────────────────┘
+       ▲
+       │
+       └── CloudWatch Logs (JSON)
 ```
+
+---
+
+## Flujo de una Solicitud
+
+1. **Usuario envía petición** → `POST /solicitudes/`
+2. **ALB recibe** → Verifica certificado SSL
+3. **ALB enruta** → A una tarea ECS (distribuida)
+4. **Backend procesa** → Valida datos, consulta BD
+5. **RDS retorna** → Datos de la solicitud
+6. **Backend responde** → 201 Created
+7. **Logs se escriben** → CloudWatch automáticamente
+
+---
+
+## Escalado Automático
+
+```
+CPU < 30% → Reduce de 4 a 2 tareas (ahorro de costos)
+CPU 30-70% → Mantiene 2 tareas (normal)
+CPU > 70% → Aumenta a 3-4 tareas (carga alta)
+```
+
+**Tiempo de escalado:** ~2-3 minutos
+
+---
+
+## Alta Disponibilidad
+
+**Si una tarea falla:**
+- ALB detecta (health check falla)
+- ECS lanza nueva tarea automáticamente
+- Tiempo de recuperación: ~1-2 minutos
+
+**Si una AZ cae (datacenter):**
+- RDS failover automático a otra AZ (~30 segundos)
+- ECS tareas se lanzan en otra AZ
+- Tiempo total de recuperación: ~2 minutos
+
+---
+
+## Costo Estimado Mensual
+
+| Servicio | Cantidad | Costo |
+|----------|----------|-------|
+| ALB | 1 | $16 |
+| ECS Fargate | 2-4 tareas | $30-60 |
+| RDS PostgreSQL | db.t3.small Multi-AZ | $60 |
+| CloudWatch | Logs | $5 |
+| Data Transfer | ~100GB | $5 |
+| **TOTAL** | | **~$116-146/mes** |
+
+---
+
+## Pasos para Desplegar
+
+### 1. Preparar Imagen Docker
+```bash
+# Construir y subir a ECR
+aws ecr get-login-password | docker login --username AWS --password-stdin 123456.dkr.ecr.us-east-1.amazonaws.com
+docker build -t esic-backend .
+docker tag esic-backend:latest 123456.dkr.ecr.us-east-1.amazonaws.com/esic-backend:latest
+docker push 123456.dkr.ecr.us-east-1.amazonaws.com/esic-backend:latest
+```
+
+### 2. Crear Cluster ECS
+```bash
+# Usar consola AWS o CLI
+aws ecs create-cluster --cluster-name esic-backend-prod
+```
+
+### 3. Crear RDS PostgreSQL
+```bash
+# Consola AWS o CLI
+aws rds create-db-instance \
+  --db-instance-identifier esic-db \
+  --db-instance-class db.t3.small \
+  --engine postgres \
+  --master-username admin \
+  --master-user-password <contraseña-fuerte> \
+  --multi-az
+```
+
+### 4. Crear ALB
+```bash
+# Consola AWS → EC2 → Load Balancers
+# Crear ALB, target group, listener HTTPS
+```
+
+### 5. Crear Servicio ECS
+```bash
+# Consola AWS o CLI
+# Definir task definition + servicio + auto-scaling
+```
+
+---
+
+## Monitoreo
+
+**Métricas a vigilar:**
+```
+- CPU% del contenedor (target: < 70%)
+- Memoria% (target: < 80%)
+- Error rate (% de 5xx errors)
+- Request latency (p95, p99)
+- RDS connections activas
+```
+
+**Alertas recomendadas:**
+```
+- CPU > 80% por 5 min → Escalar
+- Error rate > 5% → Notificar
+- RDS connections > 80% → Investigar
+```
+
+---
+
+## Seguridad
+
+**Security Groups:**
+```
+ALB: Permite tráfico 443 desde 0.0.0.0/0
+Backend: Permite 8000 solo desde ALB
+RDS: Permite 5432 solo desde Backend
+```
+
+**Secretos:**
+- DATABASE_PASSWORD en AWS Secrets Manager (no en código)
+- Rotación automática cada 90 días
 
 **SSL/TLS:**
-```
-Certificate: AWS Certificate Manager
-Domain: api.esic.example.com
-Auto-renewal: Habilitado
-Minimum TLS Version: 1.2
-Cipher Suites: Modernas
-```
+- ALB termina HTTPS
+- Comunicación ALB→Backend en HTTP (red privada)
+- Comunicación Backend→RDS encriptada
 
 ---
 
-## 5. Seguridad y Compliance
-
-### AWS WAF (Web Application Firewall)
-
-```
-Asociado a: ALB
-Rules:
-├─ AWS Managed Rules
-│  ├─ Core Rule Set (protección general)
-│  ├─ Known Bad Inputs
-│  └─ SQL Injection
-├─ Rate Limiting
-│  └─ 2000 requests por 5 minutos por IP
-├─ IP Reputation Lists
-│  └─ Bloquear IPs maliciosas conocidas
-└─ Custom Rules
-   ├─ Bloquear payloads > 1MB
-   └─ Validar Content-Type
-```
-
-### Secrets Management
-
-```
-AWS Secrets Manager:
-├─ /esic/rds/master
-│  ├─ username: esic_admin
-│  ├─ password: <random-64-chars>
-│  └─ Rotation: 90 días
-├─ /esic/app/secret-key
-│  └─ Rotation: 180 días
-├─ /esic/external-api/key
-│  └─ Rotation: As needed
-└─ Versioning: Mantener últimas 3 versiones
-```
-
-### IAM Roles y Policies
-
-```
-ECS Task Execution Role:
-├─ AmazonECSTaskExecutionRolePolicy (AWS managed)
-├─ CloudWatch Logs (logs:CreateLogGroup, logs:PutLogEvents)
-├─ ECR (ecr:GetAuthorizationToken)
-├─ Secrets Manager (secretsmanager:GetSecretValue)
-└─ X-Ray (xray:PutTraceSegments)
-
-Application Role:
-├─ RDS database connect
-├─ S3 access (si hay uploads)
-├─ SNS publish (para eventos)
-└─ Deny all other services (least privilege)
-```
-
-### Encryption
-
-```
-At-Rest:
-├─ RDS: KMS encryption
-├─ EBS: Encrypted volumes
-├─ S3: Server-side encryption (si aplica)
-└─ Secrets Manager: AWS managed key
-
-In-Transit:
-├─ ALB to ECS: TLS 1.2+
-├─ ECS to RDS: Encrypted connection string
-└─ Client to ALB: HTTPS (HTTP redirect)
-```
-
----
-
-## 6. Logging, Monitoring y Alertas
-
-### CloudWatch Logs
-
-```
-Log Groups:
-├─ /ecs/esic-backend/
-│  └─ Log Streams:
-│     ├─ esic-backend-service/backend/<task-id>
-│     ├─ esic-backend-service/sidecar/<task-id>
-│     └─ Consumer runs
-│
-└─ Retention: 30 días (configurable)
-
-Log Format: JSON (correlation IDs, timestamps, levels)
-
-Insights Queries:
-├─ fields @timestamp, @message, correlation_id
-├─ stats count() by status_code
-├─ stats avg(duration_ms) by request_path
-└─ filter @message like /ERROR/
-```
-
-### CloudWatch Metrics
-
-```
-Custom Metrics:
-├─ RequestCount (por status code)
-├─ ResponseTime (p50, p95, p99)
-├─ ErrorRate (5xx errors)
-├─ DuplicateRequestsDetected
-└─ ConsumerSuccess Rate
-
-Built-in Metrics:
-├─ ECS: CPU, Memory, Task Count
-├─ RDS: CPU, Connections, Query Latency
-├─ ALB: Request Count, Target Health
-└─ Network: In/Out bytes
-```
-
-### CloudWatch Alarms
-
-```
-Critical Alarms:
-├─ AlarmName: esic-backend-high-error-rate
-│  └─ Threshold: > 5% de 5xx errors en 5 min
-├─ AlarmName: esic-rds-connection-exceeded
-│  └─ Threshold: > 80% de max connections
-├─ AlarmName: esic-alb-unhealthy-targets
-│  └─ Threshold: Cualquier target unhealthy
-└─ AlarmName: esic-duplicate-external-id-spike
-   └─ Threshold: > 10 duplicados en 1 minuto
-
-Actions:
-├─ SNS Topic: esic-alerts
-├─ Email notifications
-├─ PagerDuty integration (opcional)
-└─ Auto-remediation: Lambda triggers
-```
-
-### X-Ray Tracing
-
-```
-Enabled en:
-├─ ALB (AWS SDK instrumentation)
-├─ ECS tasks (sidecar agent)
-└─ RDS connections
-
-Captures:
-├─ Request lifecycle
-├─ Latency per component
-├─ Error traces
-└─ Database query performance
-```
-
----
-
-## 7. CI/CD Pipeline
-
-### AWS CodePipeline
-
-```
-Pipeline: esic-backend-pipeline
-
-Stage 1: Source
-└─ GitHub (Trigger en push a main)
-
-Stage 2: Build
-├─ CodeBuild Project: esic-backend-build
-│  ├─ Environment: Python 3.10
-│  ├─ Steps:
-│  │  ├─ pip install requirements
-│  │  ├─ pytest tests/ --cov
-│  │  ├─ docker build
-│  │  └─ docker push to ECR
-│  └─ Artifacts: Build logs
-
-Stage 3: Deploy
-├─ CodeDeploy to ECS
-├─ Deployment Type: Rolling
-│  ├─ Min: 100% healthy
-│  ├─ Max: 200% capacity
-│  └─ Wait time: 5 min between batches
-└─ Rollback: Automático on failure
-
-Approval Gates:
-└─ Manual approval antes de producción
-```
-
-### Deployment Strategy
-
-```
-Rolling Deployment:
-├─ Deploy to 50% of tasks
-├─ Verify health checks
-├─ Deploy to remaining 50%
-├─ Total time: ~5-10 minutos
-└─ Rollback: Automático si algún task falla
-
-Canary Deployment (Opcional):
-├─ Deploy a 10% de traffic
-├─ Monitor metrics por 5 min
-├─ Increase to 100%
-├─ Rollback si errores > 1%
-└─ Time: ~15-20 minutos
-```
-
----
-
-## 8. Escalabilidad y Performance
-
-### Auto Scaling
-
-```
-Target Tracking Scaling Policy:
-├─ Metric: Average CPU Utilization
-├─ Target: 70%
-├─ Scale-out: +2 tasks when > 70%
-├─ Scale-in: -1 task when < 30% (delay 5 min)
-├─ Min: 2 tasks
-├─ Max: 10 tasks
-└─ Cooldown: 300 segundos
-
-Step Scaling (Opcional):
-├─ Agresivo scale-out on memory alerts
-├─ Conservative scale-in
-└─ Prevents thrashing
-```
-
-### RDS Scaling
-
-```
-Read Replicas:
-├─ Region: us-east-1 (mismo)
-├─ Count: 1-2 read replicas
-├─ Use case: Reportes, consumer queries
-├─ Connection pool: 10 connections per replica
-
-Vertical Scaling (Manual):
-├─ Monitor: CloudWatch Performance Insights
-├─ Upgrade path: t3.small → t3.medium → t3.large
-└─ Downtime: < 1 minuto (multi-AZ)
-```
-
----
-
-## 9. Disaster Recovery
-
-### Backup Strategy
-
-```
-Snapshots RDS:
-├─ Manual: Post-deployment
-├─ Automated: Diarios a las 02:00 UTC
-├─ Retention: 30 días
-└─ Cross-region copy: Semanal a us-west-2
-
-ECR Images:
-├─ Retain: Últimas 20 builds
-├─ Tag pattern: v0.1.0, v0.2.0, latest
-└─ Lifecycle: Auto-delete old images
-
-CloudFormation Templates:
-├─ Infrastructure as Code
-├─ Version control
-└─ Rollback capability
-```
-
-### Recovery Time Objectives (RTO)
-
-```
-Database Failure:
-├─ RDS Multi-AZ failover: < 2 minutos
-├─ Manual restore from snapshot: < 10 minutos
-
-Application Failure:
-├─ Health check detection: < 30 segundos
-├─ Auto-scale new tasks: < 2 minutos
-├─ Total: < 3 minutos
-
-Region Failure:
-├─ Failover to us-west-2: < 30 minutos
-└─ Requires manual intervention
-```
-
----
-
-## 10. Estimación de Costos
-
-### Breakdown Mensual (Estimado)
-
-| Componente | Precio/mes | Notas |
-|-----------|-----------|-------|
-| ECS Fargate | $30-50 | 2-4 tasks, 512 CPU |
-| RDS PostgreSQL | $40-60 | db.t3.small, 100 GB |
-| ALB | $15-20 | Includes 50 GB data |
-| NAT Gateway | $30-40 | High traffic |
-| CloudWatch | $5-10 | Logs, metrics, alarms |
-| Secrets Manager | $0.40 | 1 secret |
-| Bandwidth | $10-20 | Egress charges |
-| **Total** | **$130-200** | Por mes |
-
-**Optimizaciones:**
-- Reserved Instances: -30% en RDS
-- Savings Plans: -20% en ECS
-- Consolidar en 1 AZ dev: -50%
-
----
-
-## 11. Decisiones de Arquitectura
-
-| Decision | Rationale |
-|----------|-----------|
-| **Fargate vs EC2** | Managed service, menos overhead operacional |
-| **Multi-AZ** | Alta disponibilidad, comply con SLAs |
-| **RDS vs Self-managed** | Backups, failover, patching automáticos |
-| **ALB vs API Gateway** | Better para containers, WebSocket support |
-| **WAF habilitado** | Protección contra ataques OWASP top 10 |
-| **Secrets Manager** | Rotation automática, audit trail |
-| **CloudWatch vs ELK** | AWS native, integración tighter |
-| **No usar Lambda** | Containers más simples para migraciones futuras |
-
----
-
-## 12. Matriz de Responsabilidades (AWS vs Aplicación)
-
-| Componente | AWS Responsibility | App Responsibility |
-|-----------|-------------------|-------------------|
-| **Containers** | Orchestration, Scaling | Image building, Dockerfile |
-| **Database** | Availability, Backups, Patching | Schema design, Queries |
-| **Network** | VPC, Security Groups, Routing | Connection strings, Timeouts |
-| **Security** | Infrastructure encryption, IAM | Application-level auth, validation |
-| **Logging** | Log storage, retention, Insights | Structured logging format |
-| **Monitoring** | Infrastructure metrics | Business logic metrics |
+## Limitaciones y Mejoras Futuras
+
+**Limitaciones actuales:**
+- Single region (no multi-region)
+- Sin caché (Redis)
+- Sin CDN (CloudFront)
+
+**Mejoras futuras:**
+- Agregar ElastiCache (Redis) para caché
+- CloudFront para static assets (si aplica)
+- AWS WAF para protección adicional
+- Multi-region para DR (Disaster Recovery)
 
 ---
 
 ## Conclusión
 
 Esta arquitectura proporciona:
-- ✅ **Disponibilidad 99.9%** (SLA estándar AWS)
-- ✅ **Escalabilidad automática** (2-10 tasks)
-- ✅ **Seguridad en capas** (WAF, VPC, Encryption)
-- ✅ **Observabilidad completa** (Logs, Metrics, Traces)
-- ✅ **Disaster Recovery** (Backups, failover automático)
-- ✅ **Costo controlado** ($130-200/mes)
+- ✅ **Alta disponibilidad** (Multi-AZ, auto-scaling)
+- ✅ **Bajo mantenimiento** (servicios gestionados)
+- ✅ **Costo controlado** (~$120/mes)
+- ✅ **Escalabilidad** (automática según carga)
+- ✅ **Seguridad** (IAM, Security Groups, SSL/TLS)
 
-**Siguiente paso:** Implementar con CloudFormation o Terraform.
+Es ideal para empezar en producción sin complejidad innecesaria.
