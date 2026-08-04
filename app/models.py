@@ -40,6 +40,3 @@ class InstitutionalRequest(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-
-    class Config:
-        from_attributes = True

@@ -3,7 +3,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tests.conftest import client
 
 
-@pytest.mark.asyncio
 def test_duplicate_external_id_sequential(client):
     """Test that duplicate external_id is rejected."""
     payload = {
@@ -26,7 +25,6 @@ def test_duplicate_external_id_sequential(client):
     assert "EXT-CONC-001" in detail
 
 
-@pytest.mark.asyncio
 def test_concurrent_duplicate_attempts(client):
     """Test handling of concurrent attempts to create duplicate requests."""
     external_id = "EXT-CONC-PARALLEL"
@@ -59,7 +57,6 @@ def test_concurrent_duplicate_attempts(client):
     assert conflicts == 4
 
 
-@pytest.mark.asyncio
 def test_concurrent_different_requests(client):
     """Test that concurrent requests with different external_ids all succeed."""
     successful = 0
@@ -86,7 +83,6 @@ def test_concurrent_different_requests(client):
     assert successful == 10
 
 
-@pytest.mark.asyncio
 def test_idempotent_request_creation_detection(client):
     """Test that the system detects duplicate attempts even with slight delays."""
     external_id = "EXT-IDEM-001"
@@ -111,7 +107,6 @@ def test_idempotent_request_creation_detection(client):
     assert request_1["id"] in response2.json()["detail"]
 
 
-@pytest.mark.asyncio
 def test_update_nonexistent_request(client):
     """Test that updating a non-existent request returns 404."""
     payload = {"priority": "alta"}
@@ -122,7 +117,6 @@ def test_update_nonexistent_request(client):
     assert "no encontrada" in detail.lower()
 
 
-@pytest.mark.asyncio
 def test_update_status_nonexistent_request(client):
     """Test that updating status of non-existent request returns 404."""
     payload = {"status": "completada"}
@@ -133,7 +127,6 @@ def test_update_status_nonexistent_request(client):
     assert "no encontrada" in detail.lower()
 
 
-@pytest.mark.asyncio
 def test_delete_nonexistent_request(client):
     """Test that deleting a non-existent request returns 404."""
     response = client.delete("/solicitudes/99999")
@@ -142,7 +135,6 @@ def test_delete_nonexistent_request(client):
     assert "no encontrada" in detail.lower()
 
 
-@pytest.mark.asyncio
 def test_create_and_verify_request_uniqueness(client):
     """Test that each created request has unique request_number."""
     request_numbers = set()
@@ -164,7 +156,6 @@ def test_create_and_verify_request_uniqueness(client):
     assert len(request_numbers) == 5
 
 
-@pytest.mark.asyncio
 def test_list_requests_after_duplicates(client):
     """Test that duplicate attempts don't create multiple entries."""
     external_id = "EXT-LIST-CONC"

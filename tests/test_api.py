@@ -2,7 +2,6 @@ from tests.conftest import client
 import pytest
 
 
-@pytest.mark.asyncio
 def test_health_check(client):
     response = client.get("/health")
     assert response.status_code == 200
@@ -11,7 +10,6 @@ def test_health_check(client):
     assert data["version"] == "0.1.0"
 
 
-@pytest.mark.asyncio
 def test_health_ready(client):
     response = client.get("/health/ready")
     assert response.status_code == 200
@@ -20,7 +18,6 @@ def test_health_ready(client):
     assert "database" in data
 
 
-@pytest.mark.asyncio
 def test_create_request(client):
     payload = {
         "external_id": "EXT-001",
@@ -43,7 +40,6 @@ def test_create_request(client):
     assert "id" in data
 
 
-@pytest.mark.asyncio
 def test_create_duplicate_external_id(client):
     """Test that duplicate external_id returns 409 Conflict."""
     payload = {
@@ -62,7 +58,6 @@ def test_create_duplicate_external_id(client):
     assert response2.status_code == 409
 
 
-@pytest.mark.asyncio
 def test_create_request_invalid_email(client):
     payload = {
         "external_id": "EXT-002",
@@ -77,7 +72,6 @@ def test_create_request_invalid_email(client):
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 def test_create_request_short_description(client):
     payload = {
         "external_id": "EXT-003",
@@ -92,7 +86,6 @@ def test_create_request_short_description(client):
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 def test_create_request_invalid_type(client):
     payload = {
         "external_id": "EXT-004",
@@ -107,7 +100,6 @@ def test_create_request_invalid_type(client):
     assert response.status_code == 422
 
 
-@pytest.mark.asyncio
 def test_get_request(client):
     payload = {
         "external_id": "EXT-005",
@@ -128,13 +120,11 @@ def test_get_request(client):
     assert data["requester_name"] == "John Doe"
 
 
-@pytest.mark.asyncio
 def test_get_request_not_found(client):
     response = client.get("/solicitudes/9999")
     assert response.status_code == 404
 
 
-@pytest.mark.asyncio
 def test_list_requests(client):
     for i in range(3):
         payload = {
@@ -153,7 +143,6 @@ def test_list_requests(client):
     assert len(data) >= 3
 
 
-@pytest.mark.asyncio
 def test_list_requests_filter_by_priority(client):
     for priority in ["baja", "media", "alta"]:
         payload = {
@@ -173,7 +162,6 @@ def test_list_requests_filter_by_priority(client):
     assert all(item["priority"] == "alta" for item in data)
 
 
-@pytest.mark.asyncio
 def test_list_requests_filter_by_type(client):
     payload = {
         "external_id": "EXT-TYPE-TEST",
@@ -191,7 +179,6 @@ def test_list_requests_filter_by_type(client):
     assert all(item["request_type"] == "soporte_tecnico" for item in data)
 
 
-@pytest.mark.asyncio
 def test_update_request_status(client):
     payload = {
         "external_id": "EXT-UPD-STATUS",
@@ -212,7 +199,6 @@ def test_update_request_status(client):
     assert data["status"] == "en_proceso"
 
 
-@pytest.mark.asyncio
 def test_update_request(client):
     payload = {
         "external_id": "EXT-UPD",
@@ -238,7 +224,6 @@ def test_update_request(client):
     assert data["description"] == "Updated description with more content and sufficient length"
 
 
-@pytest.mark.asyncio
 def test_delete_request(client):
     payload = {
         "external_id": "EXT-DEL",

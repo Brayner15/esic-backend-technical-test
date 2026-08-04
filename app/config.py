@@ -1,9 +1,12 @@
 import os
 from functools import lru_cache
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(case_sensitive=False)
+
     app_name: str = "ESIC Backend Technical Test"
     app_env: str = os.getenv("APP_ENV", "development")
     app_debug: bool = os.getenv("APP_DEBUG", "True").lower() == "true"
@@ -26,9 +29,6 @@ class Settings(BaseSettings):
 
     secret_key: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
     algorithm: str = os.getenv("ALGORITHM", "HS256")
-
-    class Config:
-        case_sensitive = False
 
 
 @lru_cache
