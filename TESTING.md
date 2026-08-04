@@ -77,29 +77,32 @@ pytest tests/test_api.py::test_create_request -v
 ```bash
 $ pytest tests/ -v
 
-tests/test_api.py::test_health_check PASSED                      [  4%]
-tests/test_api.py::test_health_ready PASSED                      [  9%]
-tests/test_api.py::test_create_request PASSED                    [ 14%]
-tests/test_api.py::test_create_duplicate_external_id PASSED       [ 19%]
-tests/test_api.py::test_create_request_invalid_email PASSED       [ 23%]
-tests/test_api.py::test_create_request_short_description PASSED   [ 28%]
-tests/test_api.py::test_create_request_invalid_type PASSED        [ 33%]
-tests/test_api.py::test_get_request PASSED                        [ 38%]
-tests/test_api.py::test_get_request_not_found PASSED              [ 42%]
-tests/test_api.py::test_list_requests PASSED                      [ 47%]
-tests/test_api.py::test_list_requests_filter_by_priority PASSED   [ 52%]
-tests/test_api.py::test_list_requests_filter_by_type PASSED       [ 57%]
-tests/test_api.py::test_update_request_status PASSED              [ 61%]
-tests/test_api.py::test_update_request PASSED                     [ 66%]
-tests/test_api.py::test_delete_request PASSED                     [ 71%]
-tests/test_concurrency.py::test_duplicate_external_id_sequential PASSED      [ 76%]
-tests/test_concurrency.py::test_concurrent_duplicate_attempts PASSED         [ 80%]
-tests/test_concurrency.py::test_concurrent_different_requests PASSED         [ 85%]
-tests/test_concurrency.py::test_idempotent_request_creation_detection PASSED [ 90%]
-tests/test_concurrency.py::test_update_nonexistent_request PASSED            [ 95%]
-tests/test_concurrency.py::test_update_status_nonexistent_request PASSED     [100%]
+tests/test_api.py::test_health_check PASSED                                  [  4%]
+tests/test_api.py::test_health_ready PASSED                                  [  8%]
+tests/test_api.py::test_create_request PASSED                                [ 12%]
+tests/test_api.py::test_create_duplicate_external_id PASSED                  [ 16%]
+tests/test_api.py::test_create_request_invalid_email PASSED                  [ 20%]
+tests/test_api.py::test_create_request_short_description PASSED              [ 25%]
+tests/test_api.py::test_create_request_invalid_type PASSED                   [ 29%]
+tests/test_api.py::test_get_request PASSED                                   [ 33%]
+tests/test_api.py::test_get_request_not_found PASSED                         [ 37%]
+tests/test_api.py::test_list_requests PASSED                                 [ 41%]
+tests/test_api.py::test_list_requests_filter_by_priority PASSED              [ 45%]
+tests/test_api.py::test_list_requests_filter_by_type PASSED                  [ 50%]
+tests/test_api.py::test_update_request_status PASSED                         [ 54%]
+tests/test_api.py::test_update_request PASSED                                [ 58%]
+tests/test_api.py::test_delete_request PASSED                                [ 62%]
+tests/test_concurrency.py::test_duplicate_external_id_sequential PASSED      [ 66%]
+tests/test_concurrency.py::test_concurrent_duplicate_attempts PASSED         [ 70%]
+tests/test_concurrency.py::test_concurrent_different_requests PASSED         [ 75%]
+tests/test_concurrency.py::test_idempotent_request_creation_detection PASSED [ 79%]
+tests/test_concurrency.py::test_update_nonexistent_request PASSED            [ 83%]
+tests/test_concurrency.py::test_update_status_nonexistent_request PASSED     [ 87%]
+tests/test_concurrency.py::test_delete_nonexistent_request PASSED            [ 91%]
+tests/test_concurrency.py::test_create_and_verify_request_uniqueness PASSED  [ 95%]
+tests/test_concurrency.py::test_list_requests_after_duplicates PASSED        [100%]
 
-====================== 21 passed in 2.34s ======================
+============================================================ 24 passed in 2.43s =============================================================
 ```
 
 ## Cobertura de Tests
@@ -107,21 +110,21 @@ tests/test_concurrency.py::test_update_status_nonexistent_request PASSED     [10
 ```bash
 $ pytest tests/ --cov=app --cov-report=term
 
-Name                           Stmts   Miss  Cover
---------------------------------------------------
-app/__init__.py                    0      0   100%
-app/api/__init__.py                0      0   100%
-app/api/routes.py               152      8    95%
-app/config.py                    25      2    92%
-app/database.py                  12      0   100%
-app/logging_config.py            35      5    86%
-app/main.py                      38      6    84%
-app/middleware.py                25      3    88%
-app/models.py                    30      0   100%
-app/schemas.py                   45      0   100%
-app/services.py                 135      5    96%
---------------------------------------------------
-TOTAL                           497     29    94%
+Name                    Stmts   Miss  Cover
+-------------------------------------------
+app/__init__.py             0      0   100%
+app/api/__init__.py         0      0   100%
+app/api/routes.py          60      3    95%
+app/config.py              25      1    96%
+app/database.py            13      4    69%
+app/logging_config.py      48     20    58%
+app/main.py                41      9    78%
+app/middleware.py          18      0   100%
+app/models.py              32      0   100%
+app/schemas.py             54      0   100%
+app/services.py           103     20    81%
+-------------------------------------------
+TOTAL                     394     57    86%
 ```
 
 ## Ejecución con Docker
@@ -344,7 +347,7 @@ rm logs/*.log
 |---------|-------|--------|
 | Tests Totales | 21 | ✅ |
 | Tests Pasando | 21 | ✅ |
-| Cobertura | 94% | ✅ |
+| Cobertura | 86% | ✅ |
 | Endpoints Funcionales | 8 | ✅ |
 | Errores HTTP Manejados | 6 | ✅ |
 | Validaciones | 7+ | ✅ |

@@ -73,7 +73,6 @@ class InstitutionalRequestService:
 
         try:
             db.add(db_request)
-            db.flush()
             db.commit()
             db.refresh(db_request)
 

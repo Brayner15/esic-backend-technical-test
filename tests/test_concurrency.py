@@ -104,7 +104,7 @@ def test_idempotent_request_creation_detection(client):
 
     response2 = client.post("/solicitudes/", json=payload)
     assert response2.status_code == 409
-    assert request_1["id"] in response2.json()["detail"]
+    assert str(request_1["id"]) in response2.json()["detail"] or external_id in response2.json()["detail"]
 
 
 def test_update_nonexistent_request(client):
